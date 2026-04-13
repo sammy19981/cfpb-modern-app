@@ -1,0 +1,828 @@
+{
+  "name": "CFPB Complaint Resolution Agent",
+  "nodes": [
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "cond-review",
+              "leftValue": "={{ $json.escalation_needed }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "86b63c02-7546-40f0-a6ad-388dcfcf57b1",
+      "name": "Needs Human Review?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        112,
+        800
+      ]
+    },
+    {
+      "parameters": {
+        "formTitle": "CFPB Complaint Intake",
+        "formDescription": "Submit a consumer financial complaint. The AI pipeline will classify, assess compliance risk, identify root cause, analyze sentiment, route it, and draft a resolution letter - all automatically.",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Complaint ID",
+              "placeholder": "Optional - leave blank to auto-generate"
+            },
+            {
+              "fieldLabel": "Customer Email",
+              "fieldType": "email",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Complaint Narrative",
+              "fieldType": "textarea",
+              "placeholder": "Describe what happened in detail...",
+              "requiredField": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "c3bb4a23-8119-445c-aa0f-1c2b5c949832",
+      "name": "Complaint Intake Form",
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.2,
+      "position": [
+        -2208,
+        800
+      ],
+      "webhookId": "b9e66a8f-5922-414e-8df4-9df312c18b6f"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Classify this consumer complaint:\n\n{{ $('Complaint Intake Form').item.json['Complaint Narrative'] }}",
+        "options": {
+          "systemMessage": "You are a financial complaint classification expert working for a fintech company's compliance department.\n\nYour job is to analyze consumer complaint narratives and classify them accurately.\n\nPRODUCT CATEGORIES (pick the best match):\n- Credit card or prepaid card\n- Mortgage\n- Checking or savings account\n- Credit reporting / credit repair / other personal consumer reports\n- Debt collection\n- Student loan\n- Vehicle loan or lease\n- Money transfer / virtual currency / money service\n- Payday loan / title loan / personal loan\n\nSEVERITY LEVELS:\n- 1 (Low): Minor inconvenience, informational inquiry\n- 2 (Medium-Low): Service issue, moderate frustration\n- 3 (Medium): Financial impact under $500, repeated failures\n- 4 (High): Financial impact over $500, potential regulatory violation\n- 5 (Critical): Large financial harm, clear legal violation, vulnerable consumer\n\nYou MUST respond with ONLY a JSON object in this exact format:\n{\n  \"product\": \"<product category>\",\n  \"issue_type\": \"<primary issue>\",\n  \"sub_issue\": \"<specific sub-issue>\",\n  \"severity\": <1-5>,\n  \"severity_reasoning\": \"<one sentence explaining severity>\",\n  \"keywords\": [\"<keyword1>\", \"<keyword2>\", \"<keyword3>\"],\n  \"confidence\": <0.0-1.0>\n}"
+        }
+      },
+      "id": "6306477d-e22d-4f1d-ac52-98d56d68883c",
+      "name": "Complaint Category Classifier",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        -1920,
+        800
+      ]
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list",
+          "cachedResultName": "gpt-4o-mini"
+        },
+        "options": {
+          "responseFormat": "json_object",
+          "temperature": 0.2
+        }
+      },
+      "id": "272b34c9-2825-45df-b56f-bd76ce41291f",
+      "name": "Category Classification LLM",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        -1920,
+        992
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "jZUYTJ8T1C13Jaml",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Analyze this consumer complaint for regulatory compliance risks:\n\n{{ $('Complaint Intake Form').item.json['Complaint Narrative'] }}",
+        "options": {
+          "systemMessage": "You are a regulatory compliance analyst specializing in US consumer financial protection law.\n\nYour job is to analyze consumer complaints and identify any regulatory risks or violations.\n\nKEY REGULATIONS TO CONSIDER:\n- FCBA (Fair Credit Billing Act): Dispute resolution timelines, billing errors\n- TILA (Truth in Lending Act): Disclosure requirements, APR accuracy\n- RESPA (Real Estate Settlement Procedures Act): Escrow, servicing transfers\n- FDCPA (Fair Debt Collection Practices Act): Harassment, false statements\n- FCRA (Fair Credit Reporting Act): Accuracy, dispute procedures\n- ECOA (Equal Credit Opportunity Act): Discrimination\n- EFTA (Electronic Fund Transfer Act): Error resolution, unauthorized transfers\n- Regulation CC: Funds availability, check holds\n- Regulation E: Electronic transfers, error resolution\n- UDAAP: Unfair, deceptive, or abusive acts or practices\n\nRISK LEVELS:\n- LOW: No apparent regulatory issue\n- MEDIUM: Possible procedural non-compliance\n- HIGH: Likely regulatory violation with potential enforcement action\n- CRITICAL: Clear violation with consumer harm, immediate action needed\n\nYou MUST respond with ONLY a JSON object:\n{\n  \"risk_level\": \"<LOW|MEDIUM|HIGH|CRITICAL>\",\n  \"relevant_regulations\": [\n    {\n      \"regulation\": \"<regulation name>\",\n      \"provision\": \"<specific section or requirement>\",\n      \"relevance\": \"<how it applies to this complaint>\"\n    }\n  ],\n  \"compliance_flags\": [\"<flag1>\", \"<flag2>\"],\n  \"potential_penalties\": \"<brief description of regulatory exposure>\",\n  \"recommended_deadline\": \"<days to respond, based on regulatory requirements>\",\n  \"documentation_needed\": [\"<doc1>\", \"<doc2>\"]\n}"
+        }
+      },
+      "id": "0c6aaa29-0eab-441d-af1c-d2da9741f881",
+      "name": "Regulatory Compliance Checker",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        -1648,
+        800
+      ]
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list",
+          "cachedResultName": "gpt-4o-mini"
+        },
+        "options": {
+          "responseFormat": "json_object",
+          "temperature": 0.2
+        }
+      },
+      "id": "d21f79b7-9199-4670-b030-d23a82367ce1",
+      "name": "Compliance Review LLM",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        -1648,
+        992
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "XW83Mu99po8pA9q7",
+          "name": "n8n free OpenAI API credits"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Perform root cause analysis on this consumer complaint:\n\n{{ $('Complaint Intake Form').item.json['Complaint Narrative'] }}",
+        "options": {
+          "systemMessage": "You are a root cause analysis specialist in financial services operations.\n\nYour job is to analyze consumer complaints and determine WHY the problem occurred, going beyond the surface symptoms to identify underlying operational, process, or system failures.\n\nROOT CAUSE CATEGORIES:\n- PROCESS_FAILURE: Broken or missing business process\n- SYSTEM_ERROR: Technical system malfunction or limitation\n- HUMAN_ERROR: Staff mistake, lack of training, or miscommunication\n- POLICY_GAP: Company policy that creates consumer harm\n- COMMUNICATION_BREAKDOWN: Failure to inform, delayed communication\n- THIRD_PARTY: Issue caused by vendor, partner, or external system\n- REGULATORY_MISUNDERSTANDING: Incorrect interpretation of requirements\n\nYou MUST respond with ONLY a JSON object:\n{\n  \"primary_root_cause\": \"<ROOT CAUSE CATEGORY>\",\n  \"root_cause_description\": \"<2-3 sentence explanation of what went wrong and why>\",\n  \"contributing_factors\": [\"<factor 1>\", \"<factor 2>\"],\n  \"systemic_indicator\": <true|false>,\n  \"systemic_reasoning\": \"<if true, explain why this might be a pattern>\",\n  \"impact_chain\": \"<how the root cause led to the consumer's specific harm>\",\n  \"similar_complaint_pattern\": \"<describe the type of pattern this fits>\"\n}"
+        }
+      },
+      "id": "cdba91d4-a34f-46f9-8c11-efeb38fab635",
+      "name": "Root Cause Analyzer",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        -1392,
+        800
+      ]
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list",
+          "cachedResultName": "gpt-4o-mini"
+        },
+        "options": {
+          "responseFormat": "json_object",
+          "temperature": 0.2
+        }
+      },
+      "id": "99c545b5-1b80-4137-822c-ab38ecda6860",
+      "name": "Root Cause Analysis LLM",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        -1392,
+        992
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "jZUYTJ8T1C13Jaml",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Analyze the sentiment, urgency, and vulnerability indicators in this consumer complaint:\n\n{{ $('Complaint Intake Form').item.json['Complaint Narrative'] }}",
+        "options": {
+          "systemMessage": "You are a consumer experience analyst specializing in emotional intelligence and vulnerability detection in financial complaints.\n\nYour job is to assess the emotional state, urgency, and vulnerability of the consumer filing the complaint. This helps prioritize responses and tailor communication tone.\n\nVULNERABILITY INDICATORS:\n- Financial hardship (inability to pay, job loss)\n- Health issues mentioned\n- Elder or minor involved\n- Language barriers mentioned\n- Military/veteran status\n- Domestic situations (divorce, death)\n- Threatened with collections, legal action, or credit damage\n\nYou MUST respond with ONLY a JSON object:\n{\n  \"overall_sentiment\": \"<FRUSTRATED|ANGRY|ANXIOUS|CONFUSED|DESPERATE|NEUTRAL>\",\n  \"urgency_level\": \"<LOW|MEDIUM|HIGH|URGENT>\",\n  \"urgency_reasoning\": \"<one sentence>\",\n  \"emotional_indicators\": [\"<indicator1>\", \"<indicator2>\"],\n  \"vulnerability_flags\": [\"<flag1>\", \"<flag2>\"],\n  \"is_vulnerable_consumer\": <true|false>,\n  \"escalation_triggers\": [\"<trigger1>\"],\n  \"recommended_tone\": \"<EMPATHETIC|PROFESSIONAL|REASSURING|URGENT_CARE>\",\n  \"customer_effort_score\": \"<LOW|MEDIUM|HIGH>\"\n}"
+        }
+      },
+      "id": "4dfd8a96-2e96-4d64-a4e8-22822c67fdbe",
+      "name": "Customer Sentiment Analyzer",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        -1120,
+        800
+      ]
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list",
+          "cachedResultName": "gpt-4o-mini"
+        },
+        "options": {
+          "responseFormat": "json_object",
+          "temperature": 0.2
+        }
+      },
+      "id": "3553eb26-0a92-4825-9adf-c46bc17ee2ad",
+      "name": "Sentiment Analysis LLM",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        -1120,
+        992
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "jZUYTJ8T1C13Jaml",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Route this consumer complaint to the appropriate team.\n\nCOMPLAINT:\n{{ $('Complaint Intake Form').item.json['Complaint Narrative'] }}\n\nPRIOR ANALYSIS FROM OTHER AGENTS:\nClassification: {{ $('Complaint Category Classifier').item.json.output }}\nCompliance: {{ $('Regulatory Compliance Checker').item.json.output }}\nRoot Cause: {{ $('Root Cause Analyzer').item.json.output }}\nSentiment: {{ $('Customer Sentiment Analyzer').item.json.output }}",
+        "options": {
+          "systemMessage": "You are an intelligent complaint routing system for a national fintech company.\n\nBased on the combined analysis from the classification, compliance, root cause, and sentiment agents, you must determine the optimal internal routing.\n\nAVAILABLE TEAMS:\n- BILLING_DISPUTES: Handles charge disputes, billing errors, refunds\n- MORTGAGE_SERVICING: Escrow issues, payment processing, loan modifications\n- ACCOUNT_OPERATIONS: Account management, holds, closures, access issues\n- CREDIT_REPORTING: Credit report disputes, accuracy issues, identity theft\n- COLLECTIONS_COMPLIANCE: Debt collection complaints, harassment claims\n- LENDING_OPERATIONS: Loan terms, disbursement, interest rate issues\n- FRAUD_INVESTIGATION: Unauthorized transactions, identity theft, scams\n- EXECUTIVE_ESCALATION: High-severity, multi-issue, or VIP cases\n- REGULATORY_RESPONSE: Cases requiring formal regulatory response\n\nPRIORITY LEVELS:\n- P1 (Critical): Respond within 4 hours — active financial harm, regulatory deadline\n- P2 (High): Respond within 24 hours — significant impact, compliance risk\n- P3 (Medium): Respond within 3 business days — standard complaint\n- P4 (Low): Respond within 5 business days — minor issue, informational\n\nYou MUST respond with ONLY a JSON object:\n{\n  \"assigned_team\": \"<TEAM_NAME>\",\n  \"priority\": \"<P1|P2|P3|P4>\",\n  \"sla_hours\": <number>,\n  \"routing_reasoning\": \"<2-3 sentences explaining why this team and priority>\",\n  \"secondary_team\": \"<TEAM_NAME or null if not needed>\",\n  \"requires_manager_review\": <true|false>,\n  \"requires_legal_review\": <true|false>,\n  \"special_handling\": [\"<instruction1>\", \"<instruction2>\"]\n}"
+        }
+      },
+      "id": "3b02c790-dc6a-438a-b9ed-4130d2955451",
+      "name": "Resolution Path Router",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        -864,
+        800
+      ]
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list",
+          "cachedResultName": "gpt-4o-mini"
+        },
+        "options": {
+          "responseFormat": "json_object",
+          "temperature": 0.2
+        }
+      },
+      "id": "3d10f056-8b71-404d-be06-30fccdc2a2b5",
+      "name": "Routing Decision LLM",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        -864,
+        992
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "jZUYTJ8T1C13Jaml",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Generate a complete resolution plan for this consumer complaint.\n\nCOMPLAINT:\n{{ $('Complaint Intake Form').item.json['Complaint Narrative'] }}\n\nCOMPLETE PRIOR ANALYSIS:\nClassification: {{ $('Complaint Category Classifier').item.json.output }}\nCompliance Risk: {{ $('Regulatory Compliance Checker').item.json.output }}\nRoot Cause: {{ $('Root Cause Analyzer').item.json.output }}\nSentiment: {{ $('Customer Sentiment Analyzer').item.json.output }}\nRouting: {{ $('Resolution Path Router').item.json.output }}",
+        "options": {
+          "systemMessage": "You are a senior complaint resolution specialist for a national fintech company.\n\nUsing the complete analysis from all prior agents (classification, compliance, root cause, sentiment, and routing), generate a comprehensive resolution plan.\n\nYour resolution must be:\n- Actionable: Specific steps, not vague promises\n- Compliant: Aligned with identified regulatory requirements\n- Empathetic: Tone-matched to the consumer's emotional state\n- Preventive: Address root cause to prevent recurrence\n\nThe customer_response.body MUST be a complete, ready-to-send email addressed to the customer. Start with 'Dear Customer,' and end with 'Sincerely, Customer Resolution Team'. It must be 150-250 words, professional, empathetic, and reference the specific steps being taken.\n\nYou MUST respond with ONLY a JSON object:\n{\n  \"resolution_summary\": \"<2-3 sentence overview of the resolution approach>\",\n  \"remediation_steps\": [\n    {\n      \"step\": 1,\n      \"action\": \"<specific action to take>\",\n      \"responsible_team\": \"<team name>\",\n      \"deadline_days\": <number>,\n      \"details\": \"<additional context>\"\n    }\n  ],\n  \"customer_response\": {\n    \"subject_line\": \"<email subject>\",\n    \"body\": \"<complete customer-facing response letter, 150-250 words, professional and empathetic>\"\n  },\n  \"financial_remediation\": {\n    \"refund_recommended\": <true|false>,\n    \"estimated_amount\": \"<amount or 'N/A'>\",\n    \"fee_waiver_recommended\": <true|false>,\n    \"compensation_type\": \"<refund|credit|fee_waiver|interest_adjustment|none>\"\n  },\n  \"preventive_recommendations\": [\n    {\n      \"recommendation\": \"<what to change>\",\n      \"category\": \"<PROCESS|TRAINING|SYSTEM|POLICY>\",\n      \"impact\": \"<expected benefit>\"\n    }\n  ],\n  \"escalation_needed\": <true|false>,\n  \"follow_up_required\": <true|false>,\n  \"follow_up_days\": <number or null>,\n  \"quality_score\": {\n    \"resolution_completeness\": \"<HIGH|MEDIUM|LOW>\",\n    \"regulatory_alignment\": \"<HIGH|MEDIUM|LOW>\",\n    \"customer_satisfaction_likelihood\": \"<HIGH|MEDIUM|LOW>\"\n  }\n}"
+        }
+      },
+      "id": "706d77f5-cb92-4ba6-aca7-fe33edfd09aa",
+      "name": "Resolution Draft Generator",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        -608,
+        800
+      ]
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list",
+          "cachedResultName": "gpt-4o-mini"
+        },
+        "options": {
+          "responseFormat": "json_object",
+          "temperature": 0.3
+        }
+      },
+      "id": "b2f9d206-8eaf-441e-b092-03cf8f30e068",
+      "name": "Resolution Generation LLM",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        -608,
+        992
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "jZUYTJ8T1C13Jaml",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const parsed = JSON.parse($json.output);\n\nreturn [\n  {\n    json: parsed\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -96,
+        800
+      ],
+      "id": "7b798018-9fd0-46dc-bbff-ad6e16aa3dd4",
+      "name": "Normalize Case Payload"
+    },
+    {
+      "parameters": {
+        "jsCode": "const classifierNode = JSON.parse($('Complaint Category Classifier').first().json.output);\nconst compliance = JSON.parse($('Regulatory Compliance Checker').first().json.output);\nconst router = JSON.parse($('Resolution Path Router').first().json.output);\nconst sentiment = JSON.parse($('Customer Sentiment Analyzer').first().json.output);\n\nconst risk = (compliance.risk_level || 'LOW').toUpperCase();\nconst riskColors = { LOW: '#22c55e', MEDIUM: '#eab308', HIGH: '#f97316', CRITICAL: '#ef4444' };\nconst riskBg = { LOW: '#f0fdf4', MEDIUM: '#fefce8', HIGH: '#fff7ed', CRITICAL: '#fef2f2' };\nconst priorityColors = { P1: '#ef4444', P2: '#f97316', P3: '#eab308', P4: '#6b7280' };\n\nconst sevBars = [1,2,3,4,5].map(i => {\n  const filled = i <= classifierNode.severity;\n  const color = classifierNode.severity >= 4 ? '#ef4444' : classifierNode.severity === 3 ? '#f97316' : '#eab308';\n  return `<td style=\"width:20px;height:10px;background:${filled ? color : '#e5e7eb'};border-radius:3px;margin-right:2px\"></td>`;\n}).join('');\n\nreturn [\n  {\n    json: {\n      product: classifierNode.product,\n      severity: classifierNode.severity,\n      severity_bars: sevBars,\n      complaint_id: $('Complaint Intake Form').first().json['Complaint ID'] || `AUTO-${Date.now()}`,\n      customer_email: $('Complaint Intake Form').first().json['Customer Email'] || '',\n      original_complaint: $('Complaint Intake Form').first().json['Complaint Narrative'] || '',\n      risk_level: risk,\n      risk_color: riskColors[risk] || riskColors.LOW,\n      risk_bg: riskBg[risk] || riskBg.LOW,\n      assigned_team: (router.assigned_team || '').replace(/_/g, ' '),\n      priority: router.priority,\n      priority_color: priorityColors[router.priority] || '#6b7280',\n      sla_hours: router.sla_hours,\n      routing_reasoning: router.routing_reasoning || '',\n      sentiment: sentiment.overall_sentiment || 'N/A',\n      urgency: sentiment.urgency_level || 'N/A',\n      is_vulnerable: sentiment.is_vulnerable_consumer || false,\n      resolution_summary: $json.resolution_summary || '',\n      subject_line: $json.customer_response?.subject_line || '',\n      customer_body: $json.customer_response?.body || '',\n      escalation_needed: $json.escalation_needed ?? false,\n      remediation_steps_html: ($json.remediation_steps || []).map((s, i) => `<tr><td style=\"padding:8px 12px;border-bottom:1px solid #f3f4f6;color:#6366f1;font-weight:700;width:30px\">${s.step}</td><td style=\"padding:8px 12px;border-bottom:1px solid #f3f4f6;color:#111827\">${s.action}</td><td style=\"padding:8px 12px;border-bottom:1px solid #f3f4f6;color:#6b7280;font-size:12px\">${(s.responsible_team || '').replace(/_/g,' ')}</td><td style=\"padding:8px 12px;border-bottom:1px solid #f3f4f6;color:#6b7280;font-size:12px\">${s.deadline_days}d</td></tr>`).join(''),\n      timestamp: new Date().toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        288,
+        624
+      ],
+      "id": "26e3b796-b919-46d0-b897-f514b909e952",
+      "name": "Prepare Internal Escalation Email"
+    },
+    {
+      "parameters": {
+        "sendTo": "samsaxena19981@outlook.com",
+        "subject": "=[REVIEW REQUIRED] Case {{ $json.complaint_id }} | {{ $json.risk_level }} Risk | {{ $json.priority }}",
+        "emailType": "html",
+        "message": "=<!DOCTYPE html><html><head><meta charset=\"utf-8\"></head><body style=\"margin:0;padding:0;background:#f9fafb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif\"><div style=\"max-width:640px;margin:0 auto;padding:24px\"><div style=\"background:linear-gradient(135deg,#1e1b4b,#312e81);border-radius:16px 16px 0 0;padding:28px 32px;color:white\"><table width=\"100%\"><tr><td><div style=\"font-size:11px;text-transform:uppercase;letter-spacing:2px;color:#a5b4fc;margin-bottom:8px\">CFPB Complaint Resolution Agent</div><div style=\"font-size:22px;font-weight:700\">Compliance Review Required</div><div style=\"font-size:13px;color:#c7d2fe;margin-top:6px\">Case {{ $json.complaint_id }} &middot; {{ $json.timestamp }}</div></td><td style=\"text-align:right;vertical-align:top\"><div style=\"display:inline-block;background:{{ $json.risk_bg }};color:{{ $json.risk_color }};font-weight:700;font-size:13px;padding:6px 16px;border-radius:20px\">{{ $json.risk_level }} RISK</div></td></tr></table></div><div style=\"background:white;border:1px solid #e5e7eb;border-top:none;padding:0\"><div style=\"padding:24px 32px;border-bottom:1px solid #f3f4f6\"><div style=\"font-size:11px;text-transform:uppercase;letter-spacing:1.5px;color:#9ca3af;margin-bottom:12px;font-weight:600\">Case Information</div><table style=\"width:100%;border-collapse:collapse\"><tr><td style=\"padding:6px 0;color:#6b7280;font-size:13px;width:140px\">Product</td><td style=\"padding:6px 0;font-size:13px;font-weight:600;color:#111827\">{{ $json.product }}</td><td style=\"padding:6px 0;color:#6b7280;font-size:13px;width:140px\">Severity</td><td style=\"padding:6px 0;font-size:13px\"><table style=\"border-collapse:separate;border-spacing:3px 0\"><tr>{{ $json.severity_bars }}</tr></table> <span style=\"color:#6b7280;font-size:12px\">{{ $json.severity }}/5</span></td></tr><tr><td style=\"padding:6px 0;color:#6b7280;font-size:13px\">Priority</td><td style=\"padding:6px 0;font-size:13px;font-weight:700;color:{{ $json.priority_color }}\">{{ $json.priority }}</td><td style=\"padding:6px 0;color:#6b7280;font-size:13px\">SLA</td><td style=\"padding:6px 0;font-size:13px;font-weight:600;color:#111827\">{{ $json.sla_hours }} hours</td></tr><tr><td style=\"padding:6px 0;color:#6b7280;font-size:13px\">Routed To</td><td style=\"padding:6px 0;font-size:13px;font-weight:600;color:#111827\">{{ $json.assigned_team }}</td><td style=\"padding:6px 0;color:#6b7280;font-size:13px\">Sentiment</td><td style=\"padding:6px 0;font-size:13px;color:#111827\">{{ $json.sentiment }} &middot; {{ $json.urgency }}</td></tr><tr><td style=\"padding:6px 0;color:#6b7280;font-size:13px\">Customer</td><td colspan=\"3\" style=\"padding:6px 0;font-size:13px;color:#111827\">{{ $json.customer_email }}</td></tr></table></div><div style=\"padding:24px 32px;border-bottom:1px solid #f3f4f6\"><div style=\"font-size:11px;text-transform:uppercase;letter-spacing:1.5px;color:#9ca3af;margin-bottom:12px;font-weight:600\">AI Resolution Summary</div><div style=\"background:#f8fafc;border-left:3px solid #6366f1;padding:14px 18px;border-radius:0 8px 8px 0;font-size:14px;line-height:1.6;color:#1e293b\">{{ $json.resolution_summary }}</div></div><div style=\"padding:24px 32px;border-bottom:1px solid #f3f4f6\"><div style=\"font-size:11px;text-transform:uppercase;letter-spacing:1.5px;color:#9ca3af;margin-bottom:12px;font-weight:600\">Remediation Steps</div><table style=\"width:100%;border-collapse:collapse\"><thead><tr style=\"background:#f9fafb\"><th style=\"padding:8px 12px;text-align:left;font-size:11px;color:#9ca3af;text-transform:uppercase;letter-spacing:1px\">#</th><th style=\"padding:8px 12px;text-align:left;font-size:11px;color:#9ca3af;text-transform:uppercase;letter-spacing:1px\">Action</th><th style=\"padding:8px 12px;text-align:left;font-size:11px;color:#9ca3af;text-transform:uppercase;letter-spacing:1px\">Team</th><th style=\"padding:8px 12px;text-align:left;font-size:11px;color:#9ca3af;text-transform:uppercase;letter-spacing:1px\">Deadline</th></tr></thead><tbody>{{ $json.remediation_steps_html }}</tbody></table></div><div style=\"padding:24px 32px;border-bottom:1px solid #f3f4f6\"><div style=\"font-size:11px;text-transform:uppercase;letter-spacing:1.5px;color:#9ca3af;margin-bottom:12px;font-weight:600\">Draft Customer Response</div><div style=\"background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:18px 20px\"><div style=\"font-size:13px;font-weight:600;color:#1e40af;margin-bottom:10px\">Subject: {{ $json.subject_line }}</div><div style=\"font-size:14px;line-height:1.7;color:#1e293b;white-space:pre-wrap\">{{ $json.customer_body }}</div></div></div><div style=\"padding:24px 32px;background:#fefce8;border-bottom:1px solid #fde68a\"><div style=\"font-size:11px;text-transform:uppercase;letter-spacing:1.5px;color:#92400e;margin-bottom:8px;font-weight:600\">Original Customer Complaint</div><div style=\"font-size:13px;line-height:1.6;color:#78350f\">{{ $json.original_complaint }}</div></div></div><div style=\"text-align:center;padding:20px;color:#9ca3af;font-size:11px\">Automated by CFPB Complaint Resolution Agent &middot; 6 AI Agents &middot; Human-in-the-Loop Compliance</div></div></body></html>",
+        "options": {}
+      },
+      "id": "d0d298fb-a211-4a2c-be9e-d1a7519b0591",
+      "name": "Send Internal Compliance Alert",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        512,
+        624
+      ],
+      "webhookId": "8a43ca75-0c93-47d6-b67b-18f20e0957b2",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "oLUPbk2269UDzWlj",
+          "name": "Gmail OAuth2 API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const parsed = JSON.parse($json.output);\nconst classifierNode = JSON.parse($('Complaint Category Classifier').first().json.output);\nconst compliance = JSON.parse($('Regulatory Compliance Checker').first().json.output);\n\nreturn [\n  {\n    json: {\n      complaint_id: $('Complaint Intake Form').first().json['Complaint ID'] || `AUTO-${Date.now()}`,\n      customer_email: $('Complaint Intake Form').first().json['Customer Email'] || '',\n      complaint_narrative: $('Complaint Intake Form').first().json['Complaint Narrative'] || '',\n      requires_human_review: parsed.escalation_needed ?? false,\n      resolution_summary: parsed.resolution_summary || '',\n      subject_line: parsed.customer_response?.subject_line || '',\n      customer_response_body: parsed.customer_response?.body || '',\n      follow_up_required: parsed.follow_up_required ?? false,\n      follow_up_days: parsed.follow_up_days ?? '',\n      product: classifierNode.product || '',\n      severity: classifierNode.severity || 0,\n      risk_level: compliance.risk_level || 'LOW',\n      output: JSON.stringify(parsed)\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        288,
+        992
+      ],
+      "id": "f344323e-0de6-41cb-ba5c-41fdf08ed680",
+      "name": "Prepare Airtable Record"
+    },
+    {
+      "parameters": {
+        "authentication": "airtableOAuth2Api",
+        "operation": "create",
+        "base": {
+          "__rl": true,
+          "value": "appl3v4IecKM6JwqB",
+          "mode": "list",
+          "cachedResultName": "Untitled Base",
+          "cachedResultUrl": "https://airtable.com/appl3v4IecKM6JwqB"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblQ9RLiQdnsEhD1L",
+          "mode": "list",
+          "cachedResultName": "Table 1",
+          "cachedResultUrl": "https://airtable.com/appl3v4IecKM6JwqB/tblQ9RLiQdnsEhD1L"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "complaint_id": "={{ $json.complaint_id }}",
+            "customer_email": "={{ $json.customer_email }}",
+            "complaint_narrative": "={{ $json.complaint_narrative }}",
+            "resolution_summary": "={{ $json.resolution_summary }}",
+            "subject_line": "={{ $json.subject_line }}",
+            "customer_response_body": "={{ $json.customer_response_body }}",
+            "output": "={{ $json.output }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "complaint_id",
+              "displayName": "complaint_id",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "customer_email",
+              "displayName": "customer_email",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "complaint_narrative",
+              "displayName": "complaint_narrative",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "resolution_summary",
+              "displayName": "resolution_summary",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "subject_line",
+              "displayName": "subject_line",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "customer_response_body",
+              "displayName": "customer_response_body",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "follow_up_days",
+              "displayName": "follow_up_days",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "output",
+              "displayName": "output",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "requires_human_review",
+              "displayName": "requires_human_review",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "typecast": true
+        }
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.2,
+      "position": [
+        512,
+        992
+      ],
+      "id": "2b8fbcc6-b8fa-4df3-9604-c7b3eb5e7ce3",
+      "name": "Create Complaint Record",
+      "credentials": {
+        "airtableOAuth2Api": {
+          "id": "S0QlWlTzp0ePYzPu",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const parsed = JSON.parse($json.fields.output);\nconst classifierNode = JSON.parse($('Complaint Category Classifier').first().json.output);\nconst complaintId = $('Complaint Intake Form').first().json['Complaint ID'] || `AUTO-${Date.now()}`;\n\nconst followUp = parsed.follow_up_required\n  ? `<div style=\"background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:14px 18px;margin-top:16px\"><div style=\"font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#166534;font-weight:600;margin-bottom:4px\">Follow-Up Scheduled</div><div style=\"font-size:13px;color:#15803d\">Our team will follow up with you within ${parsed.follow_up_days || 7} business days to ensure your issue has been fully resolved.</div></div>`\n  : '';\n\nreturn [\n  {\n    json: {\n      customer_email: $('Complaint Intake Form').first().json['Customer Email'] || '',\n      subject_line: parsed.customer_response?.subject_line || 'Update on Your Recent Complaint',\n      body_html: `<!DOCTYPE html><html><head><meta charset=\"utf-8\"></head><body style=\"margin:0;padding:0;background:#f9fafb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif\"><div style=\"max-width:600px;margin:0 auto;padding:24px\"><div style=\"background:linear-gradient(135deg,#1e3a5f,#1e40af);border-radius:12px 12px 0 0;padding:28px 32px;text-align:center\"><div style=\"font-size:20px;font-weight:700;color:white\">Customer Resolution Center</div><div style=\"font-size:12px;color:#93c5fd;margin-top:4px\">Case Reference: ${complaintId}</div></div><div style=\"background:white;border:1px solid #e5e7eb;border-top:none;border-radius:0 0 12px 12px;padding:32px\"><div style=\"font-size:15px;line-height:1.8;color:#1e293b;white-space:pre-wrap\">${parsed.customer_response?.body || ''}</div>${followUp}<div style=\"margin-top:24px;padding-top:20px;border-top:1px solid #f3f4f6;text-align:center\"><div style=\"font-size:12px;color:#9ca3af\">If you have additional questions, reply to this email or call us at 1-800-XXX-XXXX.</div><div style=\"font-size:11px;color:#d1d5db;margin-top:8px\">Case ${complaintId} &middot; This is an automated communication from our Customer Resolution Center</div></div></div></div></body></html>`,\n      escalation_needed: parsed.escalation_needed ?? false\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        736,
+        992
+      ],
+      "id": "960c1904-3cf1-4b23-ad25-7532efc6466b",
+      "name": "Prepare Customer Response Email"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.customer_email }}",
+        "subject": "={{ $json.subject_line }}",
+        "emailType": "html",
+        "message": "={{ $json.body_html }}",
+        "options": {}
+      },
+      "id": "2fee8e01-30da-4a94-8f74-241f51b6d128",
+      "name": "Send Customer Resolution Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        960,
+        992
+      ],
+      "webhookId": "1363773b-64b9-4160-8da4-531479d8fd71",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "oLUPbk2269UDzWlj",
+          "name": "Gmail OAuth2 API"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Needs Human Review?": {
+      "main": [
+        [
+          {
+            "node": "Prepare Internal Escalation Email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Airtable Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Complaint Intake Form": {
+      "main": [
+        [
+          {
+            "node": "Complaint Category Classifier",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Complaint Category Classifier": {
+      "main": [
+        [
+          {
+            "node": "Regulatory Compliance Checker",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Category Classification LLM": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Complaint Category Classifier",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Regulatory Compliance Checker": {
+      "main": [
+        [
+          {
+            "node": "Root Cause Analyzer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compliance Review LLM": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Regulatory Compliance Checker",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Root Cause Analyzer": {
+      "main": [
+        [
+          {
+            "node": "Customer Sentiment Analyzer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Root Cause Analysis LLM": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Root Cause Analyzer",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Customer Sentiment Analyzer": {
+      "main": [
+        [
+          {
+            "node": "Resolution Path Router",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sentiment Analysis LLM": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Customer Sentiment Analyzer",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolution Path Router": {
+      "main": [
+        [
+          {
+            "node": "Resolution Draft Generator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Routing Decision LLM": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Resolution Path Router",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolution Draft Generator": {
+      "main": [
+        [
+          {
+            "node": "Normalize Case Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolution Generation LLM": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Resolution Draft Generator",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Case Payload": {
+      "main": [
+        [
+          {
+            "node": "Needs Human Review?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Internal Escalation Email": {
+      "main": [
+        [
+          {
+            "node": "Send Internal Compliance Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Airtable Record": {
+      "main": [
+        [
+          {
+            "node": "Create Complaint Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Complaint Record": {
+      "main": [
+        [
+          {
+            "node": "Prepare Customer Response Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Customer Response Email": {
+      "main": [
+        [
+          {
+            "node": "Send Customer Resolution Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "20c9824f-511f-4e30-99a0-0576bb678781",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "239317666eb6f1d0b5816290a6c07d1c379c1084a45faa2481dd7c4c97372078"
+  },
+  "id": "hEOr2Lk9nCkPALlh",
+  "tags": []
+}
