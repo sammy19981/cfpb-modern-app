@@ -13,15 +13,16 @@
     "lucide-react": "^0.469.0",
     "motion": "^11.15.0",
     "next": "^15.5.15",
+    "nodemailer": "^8.0.5",
     "openai": "^4.77.0",
     "postcss": "^8",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
-    "resend": "^6.11.0",
     "tailwindcss": "^4.0.0"
   },
   "devDependencies": {
     "@types/node": "^22",
+    "@types/nodemailer": "^8.0.0",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "docx": "^9.6.1",

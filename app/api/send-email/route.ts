@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { Resend } from "resend";
+import nodemailer from "nodemailer";
 import { buildCustomerEmailHtml } from "@/lib/email-template";
 
 export const runtime = "nodejs";
@@ -16,11 +16,14 @@ type Body = {
 };
 
 export async function POST(req: NextRequest) {
-  if (!process.env.RESEND_API_KEY) {
+  const GMAIL_USER = process.env.GMAIL_USER;
+  const GMAIL_APP_PASSWORD = process.env.GMAIL_APP_PASSWORD;
+
+  if (!GMAIL_USER || !GMAIL_APP_PASSWORD) {
     return Response.json(
       {
         error:
-          "RESEND_API_KEY is not set on the server. Add it to .env.local (or Vercel env vars) and redeploy.",
+          "Email sender not configured. Set GMAIL_USER and GMAIL_APP_PASSWORD in .env.local (or Vercel env vars). See https://myaccount.google.com/apppasswords to generate an app password.",
       },
       { status: 500 }
     );
@@ -57,39 +60,44 @@ export async function POST(req: NextRequest) {
     router: body.router as any,
   });
 
-  const resend = new Resend(process.env.RESEND_API_KEY);
+  const fromName = process.env.GMAIL_FROM_NAME || "CFPB Resolution Agent";
+  const from = `"${fromName}" <${GMAIL_USER}>`;
 
-  // Resend requires a verified sender. Default to their sandbox sender
-  // unless the user has configured their own domain via RESEND_FROM_EMAIL.
-  // Sandbox sender can only deliver to the Resend account owner's address.
-  const from =
-    process.env.RESEND_FROM_EMAIL ||
-    "CFPB Resolution Agent <onboarding@resend.dev>";
+  // Gmail SMTP via app password — works with any Gmail account, no domain
+  // needed. App passwords: https://myaccount.google.com/apppasswords
+  const transporter = nodemailer.createTransport({
+    host: "smtp.gmail.com",
+    port: 465,
+    secure: true,
+    auth: {
+      user: GMAIL_USER,
+      pass: GMAIL_APP_PASSWORD,
+    },
+  });
 
   try {
-    const { data, error } = await resend.emails.send({
+    const info = await transporter.sendMail({
       from,
       to,
       subject,
       html,
     });
 
-    if (error) {
-      return Response.json(
-        { error: error.message || "Resend rejected the email" },
-        { status: 502 }
-      );
-    }
-
     return Response.json({
       ok: true,
-      id: data?.id,
+      id: info.messageId,
       to,
       subject,
       from,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown send error";
-    return Response.json({ error: message }, { status: 502 });
+    // Nodemailer auth errors are common — surface a helpful hint.
+    const hint = /invalid login|535|Username and Password not accepted/i.test(
+      message
+    )
+      ? " — check that GMAIL_APP_PASSWORD is a 16-character app password (not your regular Gmail password) and that 2-Step Verification is enabled on the Google account."
+      : "";
+    return Response.json({ error: message + hint }, { status: 502 });
   }
 }
