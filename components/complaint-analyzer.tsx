@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import {
   Sparkles,
@@ -19,8 +19,6 @@ import {
   Scale,
   Zap,
   Database,
-  Radio,
-  Power,
   Building2,
   MapPin,
 } from "lucide-react";
@@ -143,18 +141,12 @@ export default function ComplaintAnalyzer() {
   const [error, setError] = useState<string | null>(null);
   const [elapsed, setElapsed] = useState<number>(0);
 
-  // Live / auto-pilot state
+  // Live complaint state
   const [liveSource, setLiveSource] = useState<LiveSource | null>(null);
   const [fetchingLive, setFetchingLive] = useState(false);
-  const [autoPilot, setAutoPilot] = useState(false);
   const [processed, setProcessed] = useState<ProcessedItem[]>([]);
 
-  const autoPilotRef = useRef(false);
   const seenIdsRef = useRef<Set<string>>(new Set());
-
-  useEffect(() => {
-    autoPilotRef.current = autoPilot;
-  }, [autoPilot]);
 
   const resetRunState = () => {
     setStatuses(IDLE_STATUSES);
@@ -293,52 +285,21 @@ export default function ComplaintAnalyzer() {
     []
   );
 
-  // Auto-pilot loop: after each completed run, if still enabled, fetch the
-  // next live complaint and process it.
-  useEffect(() => {
-    if (!autoPilot) return;
-    if (running || fetchingLive) return;
-
-    let cancelled = false;
-    (async () => {
-      // Tiny breath between runs so the UI can settle.
-      await new Promise((r) => setTimeout(r, 600));
-      if (cancelled || !autoPilotRef.current) return;
-
-      const live = await fetchLiveComplaint();
-      if (cancelled || !autoPilotRef.current || !live) return;
-
-      await runPipeline(live.narrative, live.source);
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-    // We intentionally re-run when finalPackage changes (a run finished) or autoPilot toggles.
-  }, [autoPilot, finalPackage, fetchLiveComplaint, runPipeline, running, fetchingLive]);
-
   const onManualAnalyze = () => {
     if (!narrative.trim() || running) return;
-    setAutoPilot(false);
     runPipeline(narrative, liveSource);
   };
 
   const onFetchLiveOnce = async () => {
     if (running || fetchingLive) return;
-    setAutoPilot(false);
     const live = await fetchLiveComplaint();
     if (live) {
       await runPipeline(live.narrative, live.source);
     }
   };
 
-  const onToggleAutoPilot = () => {
-    setAutoPilot((v) => !v);
-  };
-
   const onLoadSample = (sampleNarrative: string) => {
     if (running) return;
-    setAutoPilot(false);
     setLiveSource(null);
     setNarrative(sampleNarrative);
   };
@@ -348,16 +309,6 @@ export default function ComplaintAnalyzer() {
 
   return (
     <div className="space-y-8">
-      {/* Mode Bar */}
-      <ModeBar
-        autoPilot={autoPilot}
-        running={running}
-        fetchingLive={fetchingLive}
-        processedCount={processed.length}
-        onToggleAutoPilot={onToggleAutoPilot}
-        onFetchLiveOnce={onFetchLiveOnce}
-      />
-
       {/* Input Card */}
       <motion.div
         initial={{ opacity: 0, y: 10 }}
@@ -523,81 +474,6 @@ export default function ComplaintAnalyzer() {
         <ProcessedFeed items={processed} />
       )}
     </div>
-  );
-}
-
-function ModeBar({
-  autoPilot,
-  running,
-  fetchingLive,
-  processedCount,
-  onToggleAutoPilot,
-  onFetchLiveOnce,
-}: {
-  autoPilot: boolean;
-  running: boolean;
-  fetchingLive: boolean;
-  processedCount: number;
-  onToggleAutoPilot: () => void;
-  onFetchLiveOnce: () => void;
-}) {
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: -6 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-zinc-800/80 bg-zinc-900/40 px-5 py-3 backdrop-blur-2xl"
-    >
-      <div className="flex items-center gap-3">
-        <div
-          className={`relative flex h-8 w-8 items-center justify-center rounded-xl ${
-            autoPilot
-              ? "bg-gradient-to-br from-emerald-500 to-teal-500 shadow-lg shadow-emerald-500/30"
-              : "bg-zinc-800"
-          }`}
-        >
-          <Radio
-            className={`h-4 w-4 ${autoPilot ? "text-white" : "text-zinc-500"}`}
-            strokeWidth={2.4}
-          />
-          {autoPilot && (
-            <span className="absolute inset-0 animate-ping rounded-xl bg-emerald-500/40" />
-          )}
-        </div>
-        <div className="flex flex-col">
-          <div className="text-sm font-semibold text-white">
-            {autoPilot ? "Auto-Pilot Engaged" : "Manual Mode"}
-          </div>
-          <div className="text-[11px] text-zinc-500">
-            {autoPilot
-              ? running
-                ? "Processing live complaint..."
-                : fetchingLive
-                ? "Fetching next from CFPB..."
-                : "Continuously pulling from CFPB Consumer Complaint Database"
-              : `Pull live complaints or paste your own · ${processedCount} processed this session`}
-          </div>
-        </div>
-      </div>
-      <div className="flex items-center gap-2">
-        {processedCount > 0 && (
-          <div className="hidden items-center gap-1.5 rounded-lg border border-zinc-800 bg-zinc-950/60 px-3 py-1.5 text-[11px] font-semibold text-zinc-300 sm:flex">
-            <CheckCircle2 className="h-3 w-3 text-emerald-400" />
-            {processedCount} resolved
-          </div>
-        )}
-        <button
-          onClick={onToggleAutoPilot}
-          className={`inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-xs font-semibold transition ${
-            autoPilot
-              ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20"
-              : "border-zinc-700 bg-zinc-900 text-zinc-300 hover:border-emerald-500/40 hover:text-white"
-          }`}
-        >
-          <Power className="h-3.5 w-3.5" />
-          {autoPilot ? "Stop Auto-Pilot" : "Start Auto-Pilot"}
-        </button>
-      </div>
-    </motion.div>
   );
 }
 
