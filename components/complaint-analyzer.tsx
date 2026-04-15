@@ -920,6 +920,54 @@ function FinalReport({
   elapsed: number;
 }) {
   const res = pkg.resolution;
+
+  // Email send state (kept local to the final report so each pipeline run gets its own).
+  const [recipient, setRecipient] = useState("");
+  const [sending, setSending] = useState(false);
+  const [sendStatus, setSendStatus] = useState<
+    | { kind: "idle" }
+    | { kind: "success"; to: string }
+    | { kind: "error"; message: string }
+  >({ kind: "idle" });
+
+  const isValidEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient.trim());
+  const canSend =
+    !pkg.requires_human_review && isValidEmail && !sending;
+
+  const sendEmail = async () => {
+    if (!canSend) return;
+    setSending(true);
+    setSendStatus({ kind: "idle" });
+    try {
+      const r = await fetch("/api/send-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          to: recipient.trim(),
+          complaint_id: pkg.complaint_id,
+          resolution: pkg.resolution,
+          router: pkg.router,
+        }),
+      });
+      const data = await r.json();
+      if (!r.ok) {
+        setSendStatus({
+          kind: "error",
+          message: data.error || `Request failed (${r.status})`,
+        });
+      } else {
+        setSendStatus({ kind: "success", to: recipient.trim() });
+      }
+    } catch (err) {
+      setSendStatus({
+        kind: "error",
+        message: err instanceof Error ? err.message : "Network error",
+      });
+    } finally {
+      setSending(false);
+    }
+  };
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 30 }}
@@ -1037,16 +1085,95 @@ function FinalReport({
         )}
       </div>
 
-      {/* Send button */}
-      <button
-        disabled={pkg.requires_human_review}
-        className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-zinc-800/80 bg-zinc-900/40 px-6 py-3 text-sm font-semibold text-zinc-300 backdrop-blur-xl transition hover:border-emerald-500/40 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
-      >
-        <Send className="h-4 w-4" />
-        {pkg.requires_human_review
-          ? "Awaiting human review before sending"
-          : "Approve & Send Customer Response"}
-      </button>
+      {/* Email send panel */}
+      <div className="rounded-3xl border border-zinc-800/80 bg-zinc-900/40 p-5 backdrop-blur-2xl sm:p-6">
+        <div className="mb-3 flex items-center gap-2">
+          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-500/20">
+            <Mail className="h-4 w-4 text-blue-400" />
+          </div>
+          <div className="text-[10px] font-semibold uppercase tracking-wider text-blue-300">
+            Deliver Resolution
+          </div>
+        </div>
+
+        {pkg.requires_human_review ? (
+          <div className="flex items-center gap-2 rounded-2xl border border-amber-500/30 bg-amber-950/20 px-4 py-3 text-sm text-amber-200">
+            <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+            <span>
+              Human review required. Sending is blocked until a compliance officer approves this response.
+            </span>
+          </div>
+        ) : (
+          <>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <div className="relative flex-1">
+                <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
+                <input
+                  type="email"
+                  inputMode="email"
+                  autoComplete="email"
+                  placeholder="customer@example.com"
+                  value={recipient}
+                  onChange={(e) => {
+                    setRecipient(e.target.value);
+                    if (sendStatus.kind !== "idle") setSendStatus({ kind: "idle" });
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && canSend) sendEmail();
+                  }}
+                  disabled={sending}
+                  className="w-full rounded-2xl border border-zinc-800/80 bg-zinc-950/60 py-3 pl-10 pr-3 text-sm text-white placeholder-zinc-600 outline-none transition focus:border-blue-500/50 focus:ring-2 focus:ring-blue-500/20 disabled:opacity-50"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={sendEmail}
+                disabled={!canSend}
+                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-600 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-500/20 transition hover:from-blue-500 hover:to-indigo-500 disabled:cursor-not-allowed disabled:from-zinc-800 disabled:to-zinc-800 disabled:text-zinc-500 disabled:shadow-none"
+              >
+                {sending ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Sending…
+                  </>
+                ) : (
+                  <>
+                    <Send className="h-4 w-4" />
+                    Send
+                  </>
+                )}
+              </button>
+            </div>
+
+            {sendStatus.kind === "success" && (
+              <motion.div
+                initial={{ opacity: 0, y: -4 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="mt-3 flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-950/30 px-3 py-2 text-xs text-emerald-300"
+              >
+                <CheckCircle2 className="h-3.5 w-3.5 flex-shrink-0" />
+                <span>
+                  Resolution email sent to <strong>{sendStatus.to}</strong>
+                </span>
+              </motion.div>
+            )}
+            {sendStatus.kind === "error" && (
+              <motion.div
+                initial={{ opacity: 0, y: -4 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="mt-3 flex items-start gap-2 rounded-xl border border-red-500/30 bg-red-950/30 px-3 py-2 text-xs text-red-300"
+              >
+                <AlertTriangle className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
+                <span>{sendStatus.message}</span>
+              </motion.div>
+            )}
+
+            <div className="mt-3 text-[10px] text-zinc-600">
+              The branded HTML resolution letter is rendered server-side and delivered via Resend. Subject line and body are generated by the Resolution agent.
+            </div>
+          </>
+        )}
+      </div>
     </motion.div>
   );
 }
